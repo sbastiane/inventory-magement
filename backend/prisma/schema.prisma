@@ -1,0 +1,94 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  USER
+  ADMIN
+}
+
+enum WarehouseStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum PackagingUnit {
+  CAJA
+  ARROBA
+}
+
+enum InventoryUnit {
+  UND
+}
+
+model User {
+  id               String            @id @default(uuid())
+  identification   String            @unique
+  name             String
+  password         String
+  role             Role              @default(USER)
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  userWarehouses   UserWarehouse[]
+  inventoryCounts  InventoryCount[]
+
+  @@map("users")
+}
+
+model Warehouse {
+  code            String            @id
+  description     String
+  status          WarehouseStatus   @default(ACTIVE)
+  userWarehouses  UserWarehouse[]
+  inventoryCounts InventoryCount[]
+
+  @@map("warehouses")
+}
+
+model UserWarehouse {
+  id          String    @id @default(uuid())
+  userId      String
+  warehouseId String
+  createdAt   DateTime  @default(now())
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  warehouse   Warehouse @relation(fields: [warehouseId], references: [code], onDelete: Cascade)
+
+  @@unique([userId, warehouseId])
+  @@map("user_warehouses")
+}
+
+model Product {
+  code             String            @id
+  description      String
+  inventoryUnit    InventoryUnit     @default(UND)
+  packagingUnit    PackagingUnit
+  conversionFactor Int
+  inventoryCounts  InventoryCount[]
+
+  @@map("products")
+}
+
+model InventoryCount {
+  id              String    @id @default(uuid())
+  countNumber     Int
+  cutoffDate      DateTime  @db.Date
+  warehouseId     String
+  productId       String
+  packageQuantity Int
+  unitQuantity    Int
+  userId          String
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  warehouse       Warehouse @relation(fields: [warehouseId], references: [code])
+  product         Product   @relation(fields: [productId], references: [code])
+  user            User      @relation(fields: [userId], references: [id])
+
+  @@unique([productId, warehouseId, cutoffDate, countNumber])
+  @@index([cutoffDate, warehouseId])
+  @@map("inventory_counts")
+}
