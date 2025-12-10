@@ -1,7 +1,10 @@
 import dotenv from 'dotenv';
 import { z } from 'zod';
 
-dotenv.config();
+// Solo cargar .env en desarrollo, en producción las variables vienen del docker-compose
+if (process.env.NODE_ENV !== 'production') {
+  dotenv.config();
+}
 
 const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),

@@ -19,7 +19,10 @@ export const LoginPage = () => {
     try {
       await login(identification, password);
       toast.success('Inicio de sesión exitoso');
-      navigate('/');
+      // Pequeño delay para permitir que el estado se actualice
+      setTimeout(() => {
+        navigate('/');
+      }, 100);
     } catch (error: any) {
       toast.error(error.response?.data?.message || 'Error al iniciar sesión');
     } finally {

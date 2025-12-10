@@ -1,4 +1,4 @@
-import bcrypt from 'bcrypt';
+import bcrypt from 'bcryptjs';
 import { prisma } from '../../config/database';
 import { NotFoundError, ValidationError } from '../../shared/errors/CustomError';
 import { CreateUserDTO, UpdateUserDTO } from './user.schema';
