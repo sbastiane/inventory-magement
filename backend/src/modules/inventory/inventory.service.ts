@@ -101,8 +101,13 @@ export class InventoryService {
     return inventoryCount;
   }
 
-  async getInventoryCounts(filters: QueryInventoryCountDTO) {
+  async getInventoryCounts(filters: QueryInventoryCountDTO, userId?: string, userRole?: string) {
     const where: any = {};
+
+    // Filtrar por usuario si no es administrador
+    if (userRole !== 'ADMIN' && userId) {
+      where.userId = userId;
+    }
 
     if (filters.countNumber) {
       where.countNumber = filters.countNumber;

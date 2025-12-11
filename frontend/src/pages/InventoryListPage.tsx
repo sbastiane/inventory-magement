@@ -235,7 +235,7 @@ export const InventoryListPage = () => {
                       {getStatusBadge(count.status)}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      {format(new Date(count.cutoffDate), 'dd/MM/yyyy')}
+                      {count.cutoffDate.split('T')[0].split('-').reverse().join('/')}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                       {count.warehouse.code} - {count.warehouse.description}

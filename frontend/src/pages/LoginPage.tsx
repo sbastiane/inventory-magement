@@ -34,9 +34,6 @@ export const LoginPage = () => {
           <h2 className="text-center text-3xl font-extrabold text-gray-900">
             Sistema de Inventarios
           </h2>
-          <p className="mt-2 text-center text-sm text-gray-600">
-            Soberana SAS
-          </p>
         </div>
         <form className="mt-8 space-y-6 bg-white p-8 rounded-lg shadow" onSubmit={handleSubmit}>
           <Input
@@ -58,11 +55,6 @@ export const LoginPage = () => {
           <Button type="submit" className="w-full" isLoading={isLoading}>
             Iniciar Sesión
           </Button>
-          <div className="text-xs text-gray-500 mt-4">
-            <p>Usuarios de prueba:</p>
-            <p>Admin: 12345678 / admin123</p>
-            <p>Usuario: 80299534 / user123</p>
-          </div>
         </form>
       </div>
     </div>

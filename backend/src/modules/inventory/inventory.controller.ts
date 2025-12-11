@@ -30,7 +30,11 @@ export class InventoryController {
   getAll = async (req: Request, res: Response, next: NextFunction) => {
     try {
       const filters = queryInventoryCountSchema.parse(req.query);
-      const inventoryCounts = await this.inventoryService.getInventoryCounts(filters);
+      const inventoryCounts = await this.inventoryService.getInventoryCounts(
+        filters,
+        req.user!.id,
+        req.user!.role
+      );
 
       res.json({
         success: true,
