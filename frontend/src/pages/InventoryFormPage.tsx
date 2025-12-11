@@ -6,6 +6,23 @@ import { Select } from '@/components/ui/Select';
 import { Button } from '@/components/ui/Button';
 import { toast } from 'react-toastify';
 
+// Función para calcular el último día del mes anterior
+const getLastDayOfPreviousMonth = () => {
+  const today = new Date();
+  const currentMonth = today.getMonth();
+  const currentYear = today.getFullYear();
+
+  // Si estamos en enero, el mes anterior es diciembre del año anterior
+  const previousMonth = currentMonth === 0 ? 11 : currentMonth - 1;
+  const previousYear = currentMonth === 0 ? currentYear - 1 : currentYear;
+
+  // Crear fecha del último día del mes anterior
+  const lastDay = new Date(previousYear, previousMonth + 1, 0);
+
+  // Formatear como YYYY-MM-DD
+  return lastDay.toISOString().split('T')[0];
+};
+
 interface Product {
   code: string;
   description: string;
@@ -13,19 +30,29 @@ interface Product {
   packagingUnit: string;
 }
 
+interface Warehouse {
+  code: string;
+  description: string;
+  status: string;
+}
+
 export const InventoryFormPage = () => {
   const { user } = useAuth();
   const [products, setProducts] = useState<Product[]>([]);
+  const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
   const [selectedWarehouse, setSelectedWarehouse] = useState('');
   const [selectedProduct, setSelectedProduct] = useState('');
   const [countNumber, setCountNumber] = useState(1);
-  const [cutoffDate, setCutoffDate] = useState('');
+  const [cutoffDate, setCutoffDate] = useState(getLastDayOfPreviousMonth());
   const [packageQuantity, setPackageQuantity] = useState(0);
   const [unitQuantity, setUnitQuantity] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
+  const [countInfo, setCountInfo] = useState<{canRegister: boolean, message: string} | null>(null);
+  const [warehouseWarning, setWarehouseWarning] = useState<string | null>(null);
 
   useEffect(() => {
     fetchProducts();
+    fetchWarehouses();
   }, []);
 
   useEffect(() => {
@@ -34,6 +61,62 @@ export const InventoryFormPage = () => {
       setUnitQuantity(packageQuantity * product.conversionFactor);
     }
   }, [packageQuantity, selectedProduct, products]);
+
+  useEffect(() => {
+    if (countNumber > 1 && selectedProduct && selectedWarehouse && cutoffDate) {
+      checkPreviousCount();
+    } else {
+      setCountInfo(null);
+    }
+  }, [countNumber, selectedProduct, selectedWarehouse, cutoffDate]);
+
+  useEffect(() => {
+    if (selectedWarehouse) {
+      const warehouse = availableWarehouses.find(w => w.code === selectedWarehouse);
+      if (warehouse?.status === 'INACTIVE') {
+        setWarehouseWarning(`La bodega ${warehouse.description} está inactiva. No se pueden registrar nuevos conteos.`);
+      } else {
+        setWarehouseWarning(null);
+      }
+    } else {
+      setWarehouseWarning(null);
+    }
+  }, [selectedWarehouse]);
+
+  const checkPreviousCount = async () => {
+    try {
+      const response = await apiClient.get('/inventory-counts', {
+        params: {
+          productId: selectedProduct,
+          warehouseId: selectedWarehouse,
+          cutoffDate: cutoffDate,
+          countNumber: countNumber - 1,
+        },
+      });
+
+      const previousCount = response.data.data[0];
+
+      if (!previousCount) {
+        setCountInfo({
+          canRegister: false,
+          message: `⚠️ No existe el conteo ${countNumber - 1}. Debe registrarlo primero.`,
+        });
+      } else if (previousCount.status !== 'RECOUNT_REQUESTED') {
+        setCountInfo({
+          canRegister: false,
+          message: `⚠️ El conteo ${countNumber - 1} está en estado "${previousCount.status}".
+                   Un administrador debe solicitar recontar antes de que pueda registrar el conteo ${countNumber}.`,
+        });
+      } else {
+        setCountInfo({
+          canRegister: true,
+          message: `✓ El administrador solicitó recontar. Puede registrar el conteo ${countNumber}.`,
+        });
+      }
+    } catch (error) {
+      console.error('Error checking previous count:', error);
+    }
+  };
 
   const fetchProducts = async () => {
     try {
@@ -44,10 +127,23 @@ export const InventoryFormPage = () => {
     }
   };
 
+  const fetchWarehouses = async () => {
+    try {
+      const response = await apiClient.get('/warehouses');
+      setWarehouses(response.data.data);
+    } catch (error) {
+      toast.error('Error al cargar las bodegas');
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setIsLoading(true);
+    if (warehouseWarning) {
+      toast.error('No se puede registrar conteo en bodega inactiva');
+      return;
+    }
 
+    setIsLoading(true);
     try {
       await apiClient.post('/inventory-counts', {
         countNumber,
@@ -58,10 +154,15 @@ export const InventoryFormPage = () => {
       });
 
       toast.success('Conteo registrado exitosamente');
-      
+
+      // Limpiar formulario
+      setSelectedWarehouse('');
       setSelectedProduct('');
       setPackageQuantity(0);
       setUnitQuantity(0);
+      setCountNumber(1);
+      setCountInfo(null);
+      setWarehouseWarning(null);
     } catch (error: any) {
       toast.error(error.response?.data?.message || 'Error al registrar conteo');
     } finally {
@@ -69,7 +170,11 @@ export const InventoryFormPage = () => {
     }
   };
 
-  const activeWarehouses = user?.warehouses.filter(w => w.status === 'ACTIVE') || [];
+  // Los administradores pueden ver todas las bodegas activas,
+  // los usuarios normales ven todas las bodegas asignadas (activas e inactivas)
+  const availableWarehouses = user?.role === 'ADMIN'
+    ? warehouses.filter(w => w.status === 'ACTIVE')
+    : (user?.warehouses || []);
   const selectedProductData = products.find(p => p.code === selectedProduct);
 
   return (
@@ -89,21 +194,47 @@ export const InventoryFormPage = () => {
           required
         />
 
-        <Input
-          label="Fecha de Corte"
-          type="date"
-          value={cutoffDate}
-          onChange={(e) => setCutoffDate(e.target.value)}
-          required
-        />
+        {warehouseWarning && (
+          <div className="mb-4 p-4 rounded bg-yellow-50 text-yellow-800 border border-yellow-200">
+            <p className="text-sm">⚠️ {warehouseWarning}</p>
+          </div>
+        )}
+
+        {countInfo && (
+          <div className={`mb-4 p-4 rounded ${
+            countInfo.canRegister
+              ? 'bg-green-50 border border-green-200'
+              : 'bg-yellow-50 border border-yellow-200'
+          }`}>
+            <p className={`text-sm ${
+              countInfo.canRegister ? 'text-green-800' : 'text-yellow-800'
+            }`}>
+              {countInfo.message}
+            </p>
+          </div>
+        )}
+
+        <div className="mb-4">
+          <Input
+            label="Fecha de Corte (último día del mes anterior)"
+            type="date"
+            value={cutoffDate}
+            readOnly
+            className="bg-gray-50 cursor-not-allowed"
+            required
+          />
+          <p className="text-xs text-gray-500 mt-1">
+            La fecha de corte se calcula automáticamente como el último día del mes anterior
+          </p>
+        </div>
 
         <Select
           label="Bodega"
           value={selectedWarehouse}
           onChange={(e) => setSelectedWarehouse(e.target.value)}
-          options={activeWarehouses.map(w => ({
+          options={availableWarehouses.map(w => ({
             value: w.code,
-            label: `${w.code} - ${w.description}`,
+            label: `${w.code} - ${w.description}${w.status === 'INACTIVE' ? ' (INACTIVA)' : ''}`,
           }))}
           required
         />
@@ -141,9 +272,20 @@ export const InventoryFormPage = () => {
           </p>
         </div>
 
-        <Button type="submit" className="w-full" isLoading={isLoading}>
+        <Button
+          type="submit"
+          className="w-full"
+          isLoading={isLoading}
+          disabled={(countInfo && !countInfo.canRegister) || !!warehouseWarning}
+        >
           Registrar Conteo
         </Button>
+
+        {countInfo && !countInfo.canRegister && (
+          <p className="text-xs text-gray-500 mt-2 text-center">
+            El botón está deshabilitado porque no cumple los requisitos.
+          </p>
+        )}
       </form>
     </div>
   );

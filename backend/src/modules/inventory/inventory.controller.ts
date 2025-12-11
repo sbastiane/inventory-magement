@@ -14,7 +14,8 @@ export class InventoryController {
       const data = createInventoryCountSchema.parse(req.body);
       const inventoryCount = await this.inventoryService.createInventoryCount(
         data,
-        req.user!.id
+        req.user!.id,
+        req.user!.role
       );
 
       res.status(201).json({
@@ -85,6 +86,71 @@ export class InventoryController {
       res.json({
         success: true,
         data: result,
+      });
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  // Nuevo endpoint: Aprobar conteo (solo admin)
+  approve = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { notes } = req.body;
+      const inventoryCount = await this.inventoryService.approveCount(
+        req.params.id,
+        req.user!.id,
+        notes
+      );
+
+      res.json({
+        success: true,
+        data: inventoryCount,
+        message: 'Conteo aprobado exitosamente',
+      });
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  // Nuevo endpoint: Solicitar recontar (solo admin)
+  requestRecount = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { notes } = req.body;
+      const inventoryCount = await this.inventoryService.requestRecount(
+        req.params.id,
+        req.user!.id,
+        notes
+      );
+
+      res.json({
+        success: true,
+        data: inventoryCount,
+        message: `Recontar solicitado. El usuario debe registrar el conteo ${inventoryCount.countNumber + 1}`,
+      });
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  // Nuevo endpoint: Rechazar conteo (solo admin)
+  reject = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { notes } = req.body;
+      
+      if (!notes || notes.trim() === '') {
+        throw new Error('Las notas de rechazo son obligatorias');
+      }
+
+      const inventoryCount = await this.inventoryService.rejectCount(
+        req.params.id,
+        req.user!.id,
+        notes
+      );
+
+      res.json({
+        success: true,
+        data: inventoryCount,
+        message: 'Conteo rechazado',
       });
     } catch (error) {
       next(error);

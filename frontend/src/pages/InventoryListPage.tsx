@@ -5,6 +5,24 @@ import { Input } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
 import { toast } from 'react-toastify';
 import { format } from 'date-fns';
+import { useAuth } from '@/context/AuthContext';
+
+// Función para calcular el último día del mes anterior
+const getLastDayOfPreviousMonth = () => {
+  const today = new Date();
+  const currentMonth = today.getMonth();
+  const currentYear = today.getFullYear();
+
+  // Si estamos en enero, el mes anterior es diciembre del año anterior
+  const previousMonth = currentMonth === 0 ? 11 : currentMonth - 1;
+  const previousYear = currentMonth === 0 ? currentYear - 1 : currentYear;
+
+  // Crear fecha del último día del mes anterior
+  const lastDay = new Date(previousYear, previousMonth + 1, 0);
+
+  // Formatear como YYYY-MM-DD
+  return lastDay.toISOString().split('T')[0];
+};
 
 interface InventoryCount {
   id: string;
@@ -12,6 +30,10 @@ interface InventoryCount {
   cutoffDate: string;
   packageQuantity: number;
   unitQuantity: number;
+  status: 'PENDING' | 'APPROVED' | 'RECOUNT_REQUESTED' | 'REJECTED';
+  reviewedBy: string | null;
+  reviewedAt: string | null;
+  reviewNotes: string | null;
   createdAt: string;
   warehouse: {
     code: string;
@@ -28,11 +50,13 @@ interface InventoryCount {
 }
 
 export const InventoryListPage = () => {
+  const { user } = useAuth();
   const [inventoryCounts, setInventoryCounts] = useState<InventoryCount[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [filters, setFilters] = useState({
     countNumber: '',
-    cutoffDate: '',
+    cutoffDate: getLastDayOfPreviousMonth(),
     warehouseId: '',
   });
 
@@ -62,9 +86,83 @@ export const InventoryListPage = () => {
   };
 
   const clearFilters = () => {
-    setFilters({ countNumber: '', cutoffDate: '', warehouseId: '' });
+    setFilters({ countNumber: '', cutoffDate: getLastDayOfPreviousMonth(), warehouseId: '' });
     setTimeout(() => fetchInventoryCounts(), 100);
   };
+
+  const getStatusBadge = (status: string) => {
+    const badges = {
+      PENDING: 'bg-yellow-100 text-yellow-800',
+      APPROVED: 'bg-green-100 text-green-800',
+      RECOUNT_REQUESTED: 'bg-blue-100 text-blue-800',
+      REJECTED: 'bg-red-100 text-red-800',
+    };
+    const labels = {
+      PENDING: 'Pendiente',
+      APPROVED: 'Aprobado',
+      RECOUNT_REQUESTED: 'Recontar Solicitado',
+      REJECTED: 'Rechazado',
+    };
+    return (
+      <span className={`px-2 py-1 rounded text-xs font-semibold ${badges[status as keyof typeof badges]}`}>
+        {labels[status as keyof typeof labels]}
+      </span>
+    );
+  };
+
+  const handleApprove = async (id: string) => {
+    if (!window.confirm('¿Está seguro de aprobar este conteo?')) return;
+    
+    setActionLoading(id);
+    try {
+      await apiClient.post(`/inventory-counts/${id}/approve`, {
+        notes: 'Conteo aprobado por el administrador',
+      });
+      toast.success('Conteo aprobado exitosamente');
+      fetchInventoryCounts();
+    } catch (error: any) {
+      toast.error(error.response?.data?.message || 'Error al aprobar conteo');
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handleRequestRecount = async (id: string) => {
+    const notes = window.prompt('Indique el motivo para solicitar recontar (opcional):');
+    if (notes === null) return; // User cancelled
+    
+    setActionLoading(id);
+    try {
+      const response = await apiClient.post(`/inventory-counts/${id}/request-recount`, { notes });
+      toast.success(response.data.message);
+      fetchInventoryCounts();
+    } catch (error: any) {
+      toast.error(error.response?.data?.message || 'Error al solicitar recontar');
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handleReject = async (id: string) => {
+    const notes = window.prompt('Indique el motivo del rechazo (obligatorio):');
+    if (!notes || notes.trim() === '') {
+      toast.error('Debe proporcionar un motivo para rechazar');
+      return;
+    }
+    
+    setActionLoading(id);
+    try {
+      await apiClient.post(`/inventory-counts/${id}/reject`, { notes });
+      toast.success('Conteo rechazado');
+      fetchInventoryCounts();
+    } catch (error: any) {
+      toast.error(error.response?.data?.message || 'Error al rechazar conteo');
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const isAdmin = user?.role === 'ADMIN';
 
   return (
     <div>
@@ -116,6 +214,7 @@ export const InventoryListPage = () => {
               <thead className="bg-gray-50">
                 <tr>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Conteo</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Estado</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Fecha Corte</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Bodega</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Producto</th>
@@ -123,6 +222,7 @@ export const InventoryListPage = () => {
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Unidades</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Registrado Por</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Fecha Registro</th>
+                  {isAdmin && <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Acciones</th>}
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
@@ -130,6 +230,9 @@ export const InventoryListPage = () => {
                   <tr key={count.id}>
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
                       {count.countNumber}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm">
+                      {getStatusBadge(count.status)}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                       {format(new Date(count.cutoffDate), 'dd/MM/yyyy')}
@@ -152,6 +255,51 @@ export const InventoryListPage = () => {
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                       {format(new Date(count.createdAt), 'dd/MM/yyyy HH:mm')}
                     </td>
+                    {isAdmin && (
+                      <td className="px-6 py-4 whitespace-nowrap text-sm">
+                        {count.status === 'PENDING' && (
+                          <div className="flex gap-1">
+                            <button
+                              onClick={() => handleApprove(count.id)}
+                              disabled={actionLoading === count.id}
+                              className="px-2 py-1 bg-green-600 text-white rounded text-xs hover:bg-green-700 disabled:opacity-50"
+                            >
+                              ✓ Aprobar
+                            </button>
+                            {count.countNumber < 3 && (
+                              <button
+                                onClick={() => handleRequestRecount(count.id)}
+                                disabled={actionLoading === count.id}
+                                className="px-2 py-1 bg-blue-600 text-white rounded text-xs hover:bg-blue-700 disabled:opacity-50"
+                              >
+                                🔄 Recontar
+                              </button>
+                            )}
+                            <button
+                              onClick={() => handleReject(count.id)}
+                              disabled={actionLoading === count.id}
+                              className="px-2 py-1 bg-red-600 text-white rounded text-xs hover:bg-red-700 disabled:opacity-50"
+                            >
+                              ✗ Rechazar
+                            </button>
+                          </div>
+                        )}
+                        {count.status === 'APPROVED' && (
+                          <span className="text-green-600 text-xs">✓ Aprobado</span>
+                        )}
+                        {count.status === 'RECOUNT_REQUESTED' && (
+                          <span className="text-blue-600 text-xs">Esperando conteo {count.countNumber + 1}</span>
+                        )}
+                        {count.status === 'REJECTED' && (
+                          <span className="text-red-600 text-xs">✗ Rechazado</span>
+                        )}
+                        {count.reviewNotes && (
+                          <div className="text-xs text-gray-500 mt-1" title={count.reviewNotes}>
+                            💬 {count.reviewNotes.substring(0, 30)}...
+                          </div>
+                        )}
+                      </td>
+                    )}
                   </tr>
                 ))}
               </tbody>

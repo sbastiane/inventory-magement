@@ -3,9 +3,8 @@ generator client {
 }
 
 datasource db {
-  provider  = "postgresql"
-  url       = env("DATABASE_URL")
-  directUrl = env("DATABASE_URL")
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
 }
 
 enum Role {
@@ -25,6 +24,13 @@ enum PackagingUnit {
 
 enum InventoryUnit {
   UND
+}
+
+enum CountStatus {
+  PENDING
+  APPROVED
+  RECOUNT_REQUESTED
+  REJECTED
 }
 
 model User {
@@ -83,6 +89,10 @@ model InventoryCount {
   packageQuantity Int
   unitQuantity    Int
   userId          String
+  status          CountStatus @default(PENDING)
+  reviewedBy      String?
+  reviewedAt      DateTime?
+  reviewNotes     String?
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
   warehouse       Warehouse @relation(fields: [warehouseId], references: [code])
